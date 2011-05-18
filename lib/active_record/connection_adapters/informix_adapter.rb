@@ -26,6 +26,7 @@
 # POSSIBILITY OF SUCH DAMAGE.
 
 require 'active_record/connection_adapters/abstract_adapter'
+require 'arel/visitors/informix'
 
 module ActiveRecord
   class Base
@@ -182,6 +183,18 @@ module ActiveRecord
 
       def rollback_db_transaction
         @connection.rollback
+      end
+      
+      def add_limit!(sql, options, scope = :auto)
+        add_limit_offset!(sql, options)
+      end
+      
+      def primary_key(table_name) #:nodoc:
+        @connection.cursor(<<-end_sql) do |cur|
+            SELECT FIRST 1 ct.constrname FROM sysconstraints ct, systables st WHERE st.tabid = ct.tabid AND ct.constrtype = 'P' AND st.tabname = '#{table_name}'
+          end_sql
+          cur.open.fetch.first
+        end
       end
 
       def add_limit_offset!(sql, options)
