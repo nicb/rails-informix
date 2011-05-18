@@ -15,7 +15,7 @@ spec = Gem::Specification.new do |s|
   s.add_dependency 'ruby-informix', '>= 0.7.3'
   s.require_path = 'lib'
 
-  s.files = %w(lib/active_record/connection_adapters/informix_adapter.rb)
+  s.files = %w(lib/active_record/connection_adapters/informix_adapter.rb lib/arel/visitors/informix.rb)
 
   s.author = 'Gerardo Santana Gomez Garrido'
   s.email = 'gerardo.santana@gmail.com'
