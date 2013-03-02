@@ -304,6 +304,19 @@ module ActiveRecord
           c.free
           rows
         end
+
+			class << self
+
+				#
+				# interface for Arel, following a hint at:
+				# http://stackoverflow.com/questions/8089909/rubyonrails-mysql2
+				#
+				def visitor_for(pool)
+					Arel::Visitors::Informix.new(pool)
+				end
+
+			end
+
     end #class InformixAdapter < AbstractAdapter
   end #module ConnectionAdapters
 end #module ActiveRecord
