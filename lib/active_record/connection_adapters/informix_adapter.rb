@@ -108,9 +108,13 @@ module ActiveRecord
     # * <tt>:password</tt>  -- Defaults to nothing.
 
     class InformixAdapter < AbstractAdapter
+
+      attr_writer :visitor
+
       def initialize(db, logger)
         super
         @ifx_version = db.version.major.to_i
+        self.visitor = nil
       end
 
       def native_database_types
@@ -147,8 +151,8 @@ module ActiveRecord
       end
 
       # DATABASE STATEMENTS =====================================
-      def select_all(sql, name = nil)
-        select(sql, name)
+      def select_all(sql, name = nil, bind = [])
+        select(sql, name, bind)
       end
 
       def select_one(sql, name = nil)
@@ -297,25 +301,32 @@ module ActiveRecord
       end
 
       private
-        def select(sql, name = nil)
-          sql.gsub!(/=\s*null/i, 'IS NULL')
-          c = log(sql, name) { @connection.cursor(sql) }
+        def select(sql, name = nil, bind = [])
+          sql_string = sql.to_sql
+          sql_string.gsub!(/=\s*null/i, 'IS NULL')
+          c = log(sql_string, name) { @connection.cursor(sql_string) }
           rows = c.open.fetch_hash_all
           c.free
           rows
         end
 
-			class << self
+      public
 
-				#
-				# interface for Arel, following a hint at:
-				# http://stackoverflow.com/questions/8089909/rubyonrails-mysql2
-				#
-				def visitor_for(pool)
-					Arel::Visitors::Informix.new(pool)
-				end
-
-			end
+        class << self
+  
+          #
+          # interface for Arel, following a hint at:
+          # http://stackoverflow.com/questions/8089909/rubyonrails-mysql2
+          #
+          def visitor_for(pool)
+            Arel::Visitors::Informix.new(pool)
+          end
+  
+        end
+  
+        def visitor
+          @visitor || (self.visitor = self.class.visitor_for(self))
+        end
 
     end #class InformixAdapter < AbstractAdapter
   end #module ConnectionAdapters
