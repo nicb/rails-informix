@@ -342,6 +342,16 @@ module ActiveRecord
 #       exec_query_with_no_return_value("create database #{name}")
 #     end
 
+      def create_table(name, options = {})
+        super(name, options)
+        execute("CREATE SEQUENCE #{name}_seq")
+      end
+
+      def drop_table(name, options = {})
+        super(name, options)
+        execute("DROP SEQUENCE #{name}_seq")
+      end
+
       # XXX
       def indexes(table_name, name = nil)
         indexes = []
