@@ -27,6 +27,54 @@
 
 require 'active_record/connection_adapters/abstract_adapter'
 require 'arel/visitors/informix'
+require 'arel/visitors/bind_visitor'
+require 'informix' unless self.class.const_defined?(:Informix)
+
+module Informix
+
+    #
+    # <tt>Informix::Result</tt> is a class needed to make sense out of the
+    # <tt>Informix#cursor()</tt> return value and adjust it in a way
+    # that is palatable to <tt>ActiveRecord::Result</tt> objects, namely
+    # to carry the +fields+ and the +to_a+ methods properly
+    #
+    class Result
+
+      include Enumerable
+
+      attr_reader :cursor_result
+
+      #
+      # +cursor_result+ must be in the form of an array of hashes
+      # in which each hash represents a row returned by the database.
+      # The hash has the fields names as keys and the vaules for that row as
+      # values.
+      #
+      # Trivial Example:
+      #
+      # <tt>
+      #    cursor_results = [{ "COUNT(*) => 33" }]
+      #    ir = Informix::Result.new(cursor_results)
+      #    ir.fields => ["COUNT(*)"]
+      #    ir.values => [33]
+      # </tt>
+      #
+      def initialize(cr)
+        @cursor_result = cr
+      end
+
+      def fields
+        res = []
+        return res if self.cursor_result.empty?
+        res = self.cursor_result.first.keys
+      end
+
+      def to_a
+        self.cursor_result.map { |row| row.values }
+      end
+
+    end
+end
 
 module ActiveRecord
   class Base
@@ -40,7 +88,7 @@ module ActiveRecord
       username    = config[:username]
       password    = config[:password]
       db          = Informix.connect(database, username, password)
-      ConnectionAdapters::InformixAdapter.new(db, logger)
+      ConnectionAdapters::InformixAdapter.new(db, logger, config)
     end
 
     after_save :write_lobs
@@ -49,7 +97,7 @@ module ActiveRecord
         return if !connection.is_a?(ConnectionAdapters::InformixAdapter)
         self.class.columns.each do |c|
           value = self[c.name]
-          next if ![:text, :binary].include? c.type || value.nil? || value == ''
+          next if (![:text, :binary].include? c.type) || value.nil? || value == ''
           connection.raw_connection.execute(<<-end_sql, StringIO.new(value))
               UPDATE #{self.class.table_name} SET #{c.name} = ?
               WHERE #{self.class.primary_key} = #{quote_value(id)}
@@ -109,12 +157,35 @@ module ActiveRecord
 
     class InformixAdapter < AbstractAdapter
 
-      attr_writer :visitor
+      attr_reader :last_return_value
 
-      def initialize(db, logger)
-        super
+      class BindSubstitution < Arel::Visitors::Informix # :nodoc:
+        include Arel::Visitors::BindVisitor
+      end
+
+      def initialize(db, logger, config)
+        super(db, logger)
+
         @ifx_version = db.version.major.to_i
-        self.visitor = nil
+
+        #
+        # We basically avoid +prepared_statements+ because we can't find
+        # documentation on what they are (we *suppose* something, but that's
+        # simply not enough down here) and how to implement them in
+        # +Informix+. However, they can be set to true in the configuration,
+        # so you may want to test them by setting:
+        #
+        #     prepared_statements:  true
+        #
+        # in the database configuration
+        #
+        if config.fetch(:prepared_statements) { false }
+          @visitor = Arel::Visitors::PostgreSQL.new self
+        else
+          @visitor = BindSubstitution.new self
+        end
+
+        @config = config
       end
 
       def native_database_types
@@ -151,34 +222,58 @@ module ActiveRecord
       end
 
       # DATABASE STATEMENTS =====================================
-      def select_all(sql, name = nil, bind = [])
-        select(sql, name, bind)
+
+      def real_execute(sql, name = nil)
+        @last_return_value = @connection.immediate(sql)
+        nil
       end
 
-      def select_one(sql, name = nil)
-        add_limit!(sql, :limit => 1)
-        result = select(sql, name)
-        result.first if result
+      def exec_query_with_no_return_value(sql, name = nil, binds = [])
+        log(sql, name, binds) { real_execute(sql, name) }
       end
 
-      def execute(sql, name = nil)
-        log(sql, name) { @connection.immediate(sql) }
+      alias_method :execute, :exec_query_with_no_return_value
+
+      def get_cursor(sql, name = nil, binds = [])
+        log(sql, name, binds) do
+          cursor = @connection.cursor(sql)
+          yield(cursor) if block_given?
+          cursor.free
+        end
       end
 
-      def prepare(sql, name = nil)
-        log(sql, name) { @connection.prepare(sql) }
+      def exec_query_with_return_value(sql, name = nil, binds = [])
+        result = nil
+        get_cursor(sql, name, binds) do
+          |cursor|
+          result = Informix::Result.new(cursor.open.fetch_hash_all)
+        end
+        ActiveRecord::Result.new(result.fields, result.to_a) if result
       end
 
-      def insert(sql, name= nil, pk= nil, id_value= nil, sequence_name = nil)
-        execute(sql)
-        id_value
+      def select_rows(sql, name = nil, binds = [])
+        rows = []
+        get_cursor(sql, name, binds) do
+          |cursor|
+          rows = cursor.open.fetch_hash_all
+        end
+        rows
       end
 
-      alias_method :update, :execute
-      alias_method :delete, :execute
+      alias_method :update, :exec_query_with_no_return_value
+      alias_method :delete, :exec_query_with_no_return_value
+      alias_method :exec_insert, :exec_query_with_no_return_value
+
+      def prepare(sql, name = nil, binds = [])
+        log(sql, name, binds) { @connection.prepare(sql) }
+      end
+
+      def last_inserted_id(result)
+        nil
+      end
 
       def begin_db_transaction
-        execute("begin work")
+        exec_query_with_no_return_value("begin work")
       end
 
       def commit_db_transaction
@@ -189,10 +284,6 @@ module ActiveRecord
         @connection.rollback
       end
       
-      def add_limit!(sql, options, scope = :auto)
-        add_limit_offset!(sql, options)
-      end
-      
       def primary_key(table_name) #:nodoc:
         @connection.cursor(<<-end_sql) do |cur|
             SELECT FIRST 1 ct.constrname FROM sysconstraints ct, systables st WHERE st.tabid = ct.tabid AND ct.constrtype = 'P' AND st.tabname = '#{table_name}'
@@ -201,18 +292,8 @@ module ActiveRecord
         end
       end
 
-      def add_limit_offset!(sql, options)
-        if options[:limit]
-          limit = "FIRST #{options[:limit]}"
-          # SKIP available only in IDS >= 10
-          offset = @ifx_version >= 10 && options[:offset]? "SKIP #{options[:offset]}": ""
-          sql.sub!(/^select /i,"SELECT #{offset} #{limit} ")
-        end
-        sql
-      end
-
       def next_sequence_value(sequence_name)
-        select_one("select #{sequence_name}.nextval id from systables where tabid=1")['id']
+        exec_query_with_return_value("select #{sequence_name}.nextval id from systables where tabid=1")['id']
       end
 
       # QUOTING ===========================================
@@ -244,89 +325,51 @@ module ActiveRecord
       end
 
       # MIGRATION =========================================
-      def recreate_database(name)
-        drop_database(name)
-        create_database(name)
-      end
+      #
+      # These calls cannot be done from an open connection, so they
+      # won't work in any case.
+      #
+#     def recreate_database(name)
+#       drop_database(name)
+#       create_database(name)
+#     end
 
-      def drop_database(name)
-        execute("drop database #{name}")
-      end
+#     def drop_database(name)
+#       exec_query_with_no_return_value("drop database #{name}")
+#     end
 
-      def create_database(name)
-        execute("create database #{name}")
-      end
+#     def create_database(name)
+#       exec_query_with_no_return_value("create database #{name}")
+#     end
 
       # XXX
       def indexes(table_name, name = nil)
         indexes = []
       end
             
-      def create_table(name, options = {})
-        super(name, options)
-        execute("CREATE SEQUENCE #{name}_seq")
-      end
-
-      def rename_table(name, new_name)
-        execute("RENAME TABLE #{name} TO #{new_name}")
-        execute("RENAME SEQUENCE #{name}_seq TO #{new_name}_seq")
-      end
-
-      def drop_table(name)
-        super(name)
-        execute("DROP SEQUENCE #{name}_seq")
-      end
-      
       def rename_column(table, column, new_column_name)
-        execute("RENAME COLUMN #{table}.#{column} TO #{new_column_name}")
+        exec_query_with_no_return_value("RENAME COLUMN #{table}.#{column} TO #{new_column_name}")
       end
       
       def change_column(table_name, column_name, type, options = {}) #:nodoc:
         sql = "ALTER TABLE #{table_name} MODIFY #{column_name} #{type_to_sql(type, options[:limit])}"
         add_column_options!(sql, options)
-        execute(sql)
+        exec_query_with_no_return_value(sql)
       end
 
       def remove_index(table_name, options = {})
-        execute("DROP INDEX #{index_name(table_name, options)}")
+        exec_query_with_no_return_value("DROP INDEX #{index_name(table_name, options)}")
       end
 
-      # XXX
-      def structure_dump
-        super
+      def delete(dstmt, name = nil, binds = [])
+        exec_query_with_no_return_value(to_sql(dstmt, binds), name, binds)
       end
 
-      def structure_drop
-        super
+      protected
+
+      def select(sql, name = nil, binds = [])
+        exec_query_with_return_value(sql, name, binds).to_a
       end
-
-      private
-        def select(sql, name = nil, bind = [])
-          sql_string = sql.to_sql
-          sql_string.gsub!(/=\s*null/i, 'IS NULL')
-          c = log(sql_string, name) { @connection.cursor(sql_string) }
-          rows = c.open.fetch_hash_all
-          c.free
-          rows
-        end
-
-      public
-
-        class << self
-  
-          #
-          # interface for Arel, following a hint at:
-          # http://stackoverflow.com/questions/8089909/rubyonrails-mysql2
-          #
-          def visitor_for(pool)
-            Arel::Visitors::Informix.new(pool)
-          end
-  
-        end
-  
-        def visitor
-          @visitor || (self.visitor = self.class.visitor_for(self))
-        end
 
     end #class InformixAdapter < AbstractAdapter
   end #module ConnectionAdapters

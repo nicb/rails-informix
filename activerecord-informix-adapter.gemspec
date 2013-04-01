@@ -7,11 +7,11 @@ Gem::Specification.new do |s|
   s.description = 'Active Record adapter for connecting to an IBM Informix database'
   s.version = PKG_VERSION
 
-  s.add_dependency 'activerecord', '>= 1.15.4.7707'
+  s.add_dependency 'activerecord', '>= 3.2.13'
   s.add_dependency 'ruby-informix', '>= 0.7.3'
   s.require_path = 'lib'
 
-  s.files = %w(lib/active_record/connection_adapters/informix_adapter.rb lib/arel/visitors/informix.rb)
+  s.files = %w(lib/active_record/connection_adapters/informix_adapter.rb)
 
   s.author = 'Gerardo Santana Gomez Garrido'
   s.email = 'gerardo.santana@gmail.com'
