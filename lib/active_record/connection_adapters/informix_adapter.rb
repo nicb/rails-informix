@@ -285,11 +285,14 @@ module ActiveRecord
       end
       
       def primary_key(table_name) #:nodoc:
+        res = nil
         @connection.cursor(<<-end_sql) do |cur|
             SELECT FIRST 1 ct.constrname FROM sysconstraints ct, systables st WHERE st.tabid = ct.tabid AND ct.constrtype = 'P' AND st.tabname = '#{table_name}'
           end_sql
-          cur.open.fetch.first
+          rows = cur.open.fetch
+          res = rows.first if rows
         end
+        res
       end
 
       def next_sequence_value(sequence_name)
