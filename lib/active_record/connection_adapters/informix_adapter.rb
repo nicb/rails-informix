@@ -180,7 +180,7 @@ module ActiveRecord
         # in the database configuration
         #
         if config.fetch(:prepared_statements) { false }
-          @visitor = Arel::Visitors::PostgreSQL.new self
+          @visitor = Arel::Visitors::Informix.new self
         else
           @visitor = BindSubstitution.new self
         end
@@ -209,8 +209,14 @@ module ActiveRecord
         'Informix'
       end
 
+      #
+      # FIXME: in the very specific case of DDS we are not using the "_seq"
+      # scheme at all so we don't want to prefetch primary keys at any time.
+      # This is combined with the fact that the +composite_primary_keys+ gem
+      # does not support auto-incrementing sequences.
+      #
       def prefetch_primary_key?(table_name = nil)
-        true
+        false
       end
  
       def supports_migrations? #:nodoc:
