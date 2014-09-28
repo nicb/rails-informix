@@ -94,7 +94,7 @@ module ActiveRecord
     after_save :write_lobs
     private
       def write_lobs
-        return if !connection.is_a?(ConnectionAdapters::InformixAdapter)
+        return if !self.class.connection.is_a?(ConnectionAdapters::InformixAdapter)
         self.class.columns.each do |c|
           value = self[c.name]
           next if (![:text, :binary].include? c.type) || value.nil? || value == ''
@@ -269,6 +269,10 @@ module ActiveRecord
       alias_method :update, :exec_query_with_no_return_value
       alias_method :delete, :exec_query_with_no_return_value
       alias_method :exec_insert, :exec_query_with_no_return_value
+
+			def insertinsert(arel, name = nil, pk = nil, id_value = nil, sequence_name = nil, binds = [])
+				exec_insert(to_sql(arel, binds), name, binds)
+			end
 
       def prepare(sql, name = nil, binds = [])
         log(sql, name, binds) { @connection.prepare(sql) }
