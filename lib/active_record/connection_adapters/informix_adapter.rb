@@ -270,7 +270,7 @@ module ActiveRecord
       alias_method :delete, :exec_query_with_no_return_value
       alias_method :exec_insert, :exec_query_with_no_return_value
 
-			def insertinsert(arel, name = nil, pk = nil, id_value = nil, sequence_name = nil, binds = [])
+			def insert(arel, name = nil, pk = nil, id_value = nil, sequence_name = nil, binds = [])
 				exec_insert(to_sql(arel, binds), name, binds)
 			end
 
@@ -391,7 +391,7 @@ module ActiveRecord
       protected
 
       def select(sql, name = nil, binds = [])
-        exec_query_with_return_value(sql, name, binds).to_a
+        exec_query_with_return_value(sql, name, binds)
       end
 
     end #class InformixAdapter < AbstractAdapter
