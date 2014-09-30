@@ -266,12 +266,20 @@ module ActiveRecord
         rows
       end
 
-      alias_method :update, :exec_query_with_no_return_value
-      alias_method :delete, :exec_query_with_no_return_value
+      alias_method :exec_update, :exec_query_with_no_return_value
+      alias_method :exec_delete, :exec_query_with_no_return_value
       alias_method :exec_insert, :exec_query_with_no_return_value
 
 			def insert(arel, name = nil, pk = nil, id_value = nil, sequence_name = nil, binds = [])
 				exec_insert(to_sql(arel, binds), name, binds)
+			end
+
+			def update(arel, name = nil, binds = [])
+				exec_update(to_sql(arel, binds), name, binds)
+			end
+
+			def delete(arel, name = nil, binds = [])
+				exec_delete(to_sql(arel, binds), name, binds)
 			end
 
       def prepare(sql, name = nil, binds = [])
