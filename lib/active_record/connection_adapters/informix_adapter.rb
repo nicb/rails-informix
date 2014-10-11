@@ -88,11 +88,16 @@ module ActiveRecord
       username    = config[:username]
       password    = config[:password]
       db          = Informix.connect(database, username, password)
-      ConnectionAdapters::InformixAdapter.new(db, logger, config)
+      return_adapter(db, config)
     end
 
     after_save :write_lobs
     private
+
+      def self.return_adapter(db, config)
+        ConnectionAdapters::InformixAdapter.new(db, logger, config)
+      end
+
       def write_lobs
         return if !self.class.connection.is_a?(ConnectionAdapters::InformixAdapter)
         self.class.columns.each do |c|
@@ -270,17 +275,17 @@ module ActiveRecord
       alias_method :exec_delete, :exec_query_with_no_return_value
       alias_method :exec_insert, :exec_query_with_no_return_value
 
-			def insert(arel, name = nil, pk = nil, id_value = nil, sequence_name = nil, binds = [])
-				exec_insert(to_sql(arel, binds), name, binds)
-			end
+      def insert(arel, name = nil, pk = nil, id_value = nil, sequence_name = nil, binds = [])
+        exec_insert(to_sql(arel, binds), name, binds)
+      end
 
-			def update(arel, name = nil, binds = [])
-				exec_update(to_sql(arel, binds), name, binds)
-			end
+      def update(arel, name = nil, binds = [])
+        exec_update(to_sql(arel, binds), name, binds)
+      end
 
-			def delete(arel, name = nil, binds = [])
-				exec_delete(to_sql(arel, binds), name, binds)
-			end
+      def delete(arel, name = nil, binds = [])
+        exec_delete(to_sql(arel, binds), name, binds)
+      end
 
       def prepare(sql, name = nil, binds = [])
         log(sql, name, binds) { @connection.prepare(sql) }
@@ -403,5 +408,8 @@ module ActiveRecord
       end
 
     end #class InformixAdapter < AbstractAdapter
+
+
   end #module ConnectionAdapters
+
 end #module ActiveRecord
