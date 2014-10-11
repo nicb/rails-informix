@@ -1,5 +1,5 @@
 PKG_NAME = 'activerecord-informix-adapter' unless defined?(PKG_NAME)
-PKG_VERSION = "1.1.2" unless defined?(PKG_VERSION)
+PKG_VERSION = "1.1.3" unless defined?(PKG_VERSION)
 
 Gem::Specification.new do |s|
   s.name = PKG_NAME
