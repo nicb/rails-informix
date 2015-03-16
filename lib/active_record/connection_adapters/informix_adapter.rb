@@ -232,6 +232,10 @@ module ActiveRecord
         "#{table}_seq"
       end
 
+      def set_isolation #:nodoc:
+        "SET ISOLATION TO DIRTY READ"
+      end
+
       # DATABASE STATEMENTS =====================================
 
       def real_execute(sql, name = nil)
@@ -240,7 +244,9 @@ module ActiveRecord
       end
 
       def exec_query_with_no_return_value(sql, name = nil, binds = [])
-        log(sql, name, binds) { real_execute(sql, name) }
+        log(sql, name, binds) do
+          real_execute(sql, name)
+        end
       end
 
       alias_method :execute, :exec_query_with_no_return_value
@@ -288,22 +294,35 @@ module ActiveRecord
       end
 
       def prepare(sql, name = nil, binds = [])
-        log(sql, name, binds) { @connection.prepare(sql) }
+        log(sql, name, binds) do
+          @connection.prepare(sql)
+        end
       end
 
       def last_inserted_id(result)
         nil
       end
 
+      def supports_transaction_isolation?
+        true
+      end
+
+      def begin_isolated_db_transaction(not_used)
+        exec_query_with_no_return_value(set_isolation)
+        begin_db_transaction
+      end
+
       def begin_db_transaction
-        exec_query_with_no_return_value("begin work")
+        exec_query_with_no_return_value("BEGIN WORK")
       end
 
       def commit_db_transaction
+        exec_query_with_no_return_value("COMMIT WORK")
         @connection.commit
       end
 
       def rollback_db_transaction
+        exec_query_with_no_return_value("ROLLBACK WORK")
         @connection.rollback
       end
       
